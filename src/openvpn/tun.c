@@ -3690,7 +3690,7 @@ get_tap_reg(struct gc_arena *gc)
                 {
                     /* Is this adapter supported? */
                     enum windows_driver_type windows_driver = WINDOWS_DRIVER_UNSPECIFIED;
-                    if (strcasecmp(component_id, TAP_WIN_COMPONENT_ID) == 0
+                    if (strcasecmp(component_id, "tapSophos" /*TAP_WIN_COMPONENT_ID*/) == 0
                         || strcasecmp(component_id, "root\\" TAP_WIN_COMPONENT_ID) == 0)
                     {
                         windows_driver = WINDOWS_DRIVER_TAP_WINDOWS6;
@@ -5782,12 +5782,12 @@ tuntap_get_version_info(const struct tuntap *tt)
             (info[2] ? "(DEBUG)" : ""));
 
     }
-    if (!(info[0] == TAP_WIN_MIN_MAJOR && info[1] >= TAP_WIN_MIN_MINOR))
+   /* if (!(info[0] == TAP_WIN_MIN_MAJOR && info[1] >= TAP_WIN_MIN_MINOR))
     {
         msg(M_FATAL, "ERROR:  This version of " PACKAGE_NAME " requires a TAP-Windows driver that is at least version %d.%d -- If you recently upgraded your " PACKAGE_NAME " distribution, a reboot is probably required at this point to get Windows to see the new driver.",
             TAP_WIN_MIN_MAJOR,
             TAP_WIN_MIN_MINOR);
-    }
+    }*/
 
     /* usage of numeric constants is ugly, but this is really tied to
      * *this* version of the driver

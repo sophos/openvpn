@@ -36,6 +36,9 @@
     <ClCompile Include="compat-lz4.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="compat-strsep.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="compat.h">
