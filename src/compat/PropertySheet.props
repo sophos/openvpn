@@ -3,10 +3,11 @@
   <ImportGroup Label="PropertySheets" />
   <PropertyGroup Label="UserMacros">
     <SOURCEBASE>$(SolutionDir)</SOURCEBASE>
-    <OPENVPN_DEPROOT>$(SOURCEBASE)\..\openvpn-build\msvc\image$(PlatformArchitecture)</OPENVPN_DEPROOT>
+    <OPENVPN_DEPROOT>$(SOURCEBASE)\..\openvpn-build\msvc\image</OPENVPN_DEPROOT>
     <OPENSSL_HOME>$(OPENVPN_DEPROOT)</OPENSSL_HOME>
     <TAP_WINDOWS_HOME>$(OPENVPN_DEPROOT)</TAP_WINDOWS_HOME>
     <LZO_HOME>$(OPENVPN_DEPROOT)</LZO_HOME>
+	<THIRDPARTY_INCLUDE_HOME>$(OPENVPN_DEPROOT)\include</THIRDPARTY_INCLUDE_HOME>
     <PKCS11H_HOME>$(OPENVPN_DEPROOT)</PKCS11H_HOME>
   </PropertyGroup>
   <PropertyGroup>
