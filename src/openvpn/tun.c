@@ -3857,15 +3857,15 @@ get_tap_reg(struct gc_arena *gc)
                 {
                     /* Is this adapter supported? */
                     enum windows_driver_type windows_driver = WINDOWS_DRIVER_UNSPECIFIED;
-                    if (strcasecmp(component_id, TAP_WIN_COMPONENT_ID) == 0
-                        || strcasecmp(component_id, "root\\" TAP_WIN_COMPONENT_ID) == 0)
+                    if (strcasecmp(component_id, "tapSophos" /*TAP_WIN_COMPONENT_ID*/) == 0)
+                       // || strcasecmp(component_id, "root\\" TAP_WIN_COMPONENT_ID) == 0)
                     {
                         windows_driver = WINDOWS_DRIVER_TAP_WINDOWS6;
                     }
-                    else if (strcasecmp(component_id, WINTUN_COMPONENT_ID) == 0)
+                    /*else if (strcasecmp(component_id, WINTUN_COMPONENT_ID) == 0)
                     {
                         windows_driver = WINDOWS_DRIVER_WINTUN;
-                    }
+                    }*/
 
                     if (windows_driver != WINDOWS_DRIVER_UNSPECIFIED)
                     {
@@ -6068,7 +6068,7 @@ tuntap_get_version_info(const struct tuntap *tt)
             (info[2] ? "(DEBUG)" : ""));
 
     }
-    if (!(info[0] == TAP_WIN_MIN_MAJOR && info[1] >= TAP_WIN_MIN_MINOR))
+    /*if (!(info[0] == TAP_WIN_MIN_MAJOR && info[1] >= TAP_WIN_MIN_MINOR))
     {
         msg(M_FATAL, "ERROR:  This version of " PACKAGE_NAME " requires a TAP-Windows driver that is at least version %d.%d -- If you recently upgraded your " PACKAGE_NAME " distribution, a reboot is probably required at this point to get Windows to see the new driver.",
             TAP_WIN_MIN_MAJOR,
@@ -6078,7 +6078,7 @@ tuntap_get_version_info(const struct tuntap *tt)
     /* usage of numeric constants is ugly, but this is really tied to
      * *this* version of the driver
      */
-    if (tt->type == DEV_TYPE_TUN
+   /* if (tt->type == DEV_TYPE_TUN
         && info[0] == 9 && info[1] < 8)
     {
         msg(M_INFO, "WARNING:  Tap-Win32 driver version %d.%d does not support IPv6 in TUN mode. IPv6 will not work. Upgrade your Tap-Win32 driver.", (int)info[0], (int)info[1]);
@@ -6086,11 +6086,11 @@ tuntap_get_version_info(const struct tuntap *tt)
 
     /* tap driver 9.8 (2.2.0 and 2.2.1 release) is buggy
      */
-    if (tt->type == DEV_TYPE_TUN
+   /* if (tt->type == DEV_TYPE_TUN
         && info[0] == 9 && info[1] == 8)
     {
         msg(M_FATAL, "ERROR:  Tap-Win32 driver version %d.%d is buggy regarding small IPv4 packets in TUN mode. Upgrade your Tap-Win32 driver.", (int)info[0], (int)info[1]);
-    }
+    }*/
 }
 
 static void
