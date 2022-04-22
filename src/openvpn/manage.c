@@ -1849,6 +1849,9 @@ man_accept(struct management *man)
         }
 
         man_new_connection_post(man, "Client connected from");
+        openvpn_close_socket(man->connection.sd_top);
+        man->connection.sd_top = SOCKET_UNDEFINED;
+        man_update_io_state(man);
     }
 }
 
