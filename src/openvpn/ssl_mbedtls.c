@@ -168,7 +168,13 @@ tls_ctx_free(struct tls_root_ctx *ctx)
         }
 
 #if defined(ENABLE_PKCS11)
-        pkcs11h_certificate_freeCertificate(ctx->pkcs11_cert);
+        /* ...freeCertificate() can handle NULL ptrs, but if pkcs11 helper
+         * has not been initialized, it will ASSERT() - so, do not pass NULL
+         */
+        if (ctx->pkcs11_cert)
+        {
+            pkcs11h_certificate_freeCertificate(ctx->pkcs11_cert);
+        }
 #endif
 
         if (ctx->allowed_ciphers)
@@ -330,7 +336,8 @@ tls_ctx_restrict_ciphers(struct tls_root_ctx *ctx, const char *ciphers)
 void
 tls_ctx_set_cert_profile(struct tls_root_ctx *ctx, const char *profile)
 {
-    if (!profile || 0 == strcmp(profile, "legacy"))
+    if (!profile || 0 == strcmp(profile, "legacy")
+        || 0 == strcmp(profile, "insecure"))
     {
         ctx->cert_profile = openvpn_x509_crt_profile_legacy;
     }

@@ -1676,7 +1676,14 @@ process_outgoing_link(struct context *c)
         }
 
         /* for unreachable network and "connecting" state switch to the next host */
-        if (size < 0 && ENETUNREACH == error_code && c->c2.tls_multi
+
+        bool unreachable = error_code ==
+#ifdef _WIN32
+            WSAENETUNREACH;
+#else
+            ENETUNREACH;
+#endif
+        if (size < 0 && unreachable && c->c2.tls_multi
             && !tls_initial_packet_received(c->c2.tls_multi) && c->options.mode == MODE_POINT_TO_POINT)
         {
             msg(M_INFO, "Network unreachable, restarting");
@@ -1707,8 +1714,6 @@ process_outgoing_link(struct context *c)
 void
 process_outgoing_tun(struct context *c)
 {
-    struct gc_arena gc = gc_new();
-
     /*
      * Set up for write() call to TUN/TAP
      * device.
@@ -1794,7 +1799,6 @@ process_outgoing_tun(struct context *c)
     buf_reset(&c->c2.to_tun);
 
     perf_pop();
-    gc_free(&gc);
 }
 
 void
