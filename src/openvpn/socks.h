@@ -1,3 +1,4 @@
+
 /*
  *  OpenVPN -- An application to securely tunnel IP networks
  *             over a single TCP/UDP port, with support for SSL/TLS-based
@@ -5,7 +6,7 @@
  *             packet encryption, packet authentication, and
  *             packet compression.
  *
- *  Copyright (C) 2002-2022 OpenVPN Inc <sales@openvpn.net>
+ *  Copyright (C) 2002-2023 OpenVPN Inc <sales@openvpn.net>
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License version 2
@@ -42,8 +43,6 @@ struct socks_proxy_info {
     char authfile[256];
 };
 
-void socks_adjust_frame_parameters(struct frame *frame, int proto);
-
 struct socks_proxy_info *socks_proxy_new(const char *server,
                                          const char *port,
                                          const char *authfile);
@@ -54,13 +53,13 @@ void establish_socks_proxy_passthru(struct socks_proxy_info *p,
                                     socket_descriptor_t sd,  /* already open to proxy */
                                     const char *host,        /* openvpn server remote */
                                     const char *servname,          /* openvpn server port */
-                                    volatile int *signal_received);
+                                    struct signal_info *sig_info);
 
 void establish_socks_proxy_udpassoc(struct socks_proxy_info *p,
                                     socket_descriptor_t ctrl_sd,  /* already open to proxy */
                                     socket_descriptor_t udp_sd,
                                     struct openvpn_sockaddr *relay_addr,
-                                    volatile int *signal_received);
+                                    struct signal_info *sig_info);
 
 void socks_process_incoming_udp(struct buffer *buf,
                                 struct link_socket_actual *from);
