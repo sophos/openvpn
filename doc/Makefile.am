@@ -5,7 +5,7 @@
 #             packet encryption, packet authentication, and
 #             packet compression.
 #
-#  Copyright (C) 2002-2022 OpenVPN Inc <sales@openvpn.net>
+#  Copyright (C) 2002-2023 OpenVPN Inc <sales@openvpn.net>
 #  Copyright (C) 2006-2012 Alon Bar-Lev <alon.barlev@gmail.com>
 #
 
@@ -25,6 +25,7 @@ dist_doc_DATA = \
 
 openvpn_sections = \
 	man-sections/advanced-options.rst \
+	man-sections/cipher-negotiation.rst \
 	man-sections/client-options.rst \
 	man-sections/connection-profiles.rst \
 	man-sections/encryption-options.rst \
@@ -49,6 +50,7 @@ openvpn_sections = \
 	man-sections/windows-options.rst
 
 openvpn_examples_sections = \
+	man-sections/example-fingerprint.rst \
 	man-sections/examples.rst
 
 dist_noinst_DATA = \
