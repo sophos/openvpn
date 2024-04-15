@@ -1,11 +1,11 @@
 /*
  *  OpenVPN -- An application to securely tunnel IP networks
- *             over a single TCP/UDP port, with support for SSL/TLS-based
+ *             over a single UDP port, with support for SSL/TLS-based
  *             session authentication and key exchange,
  *             packet encryption, packet authentication, and
  *             packet compression.
  *
- *  Copyright (C) 2002-2024 OpenVPN Inc <sales@openvpn.net>
+ * Copyright (C) 2023-2024 OpenVPN Inc <sales@openvpn.net>
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License version 2
@@ -21,20 +21,32 @@
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-#if !defined(PUSHLIST_H)
-#define PUSHLIST_H
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#endif
 
-/* parameters to be pushed to peer */
+#include "syshead.h"
 
-struct push_entry {
-    struct push_entry *next;
-    bool enable;
-    const char *option;
-};
+#include "crypto.h"
+#include "error.h"
 
-struct push_list {
-    struct push_entry *head;
-    struct push_entry *tail;
-};
-
-#endif /* if !defined(PUSHLIST_H) */
+int
+main(void)
+{
+#if defined(ENABLE_CRYPTO_OPENSSL)
+    crypto_load_provider("legacy");
+    crypto_load_provider("default");
+#endif
+#ifdef NTLM
+    if (!md_valid("MD4"))
+    {
+        msg(M_FATAL, "MD4 not supported");
+    }
+    if (!md_valid("MD5"))
+    {
+        msg(M_FATAL, "MD5 not supported");
+    }
+#else  /* ifdef NTLM */
+    msg(M_FATAL, "NTLM support not compiled in");
+#endif
+}
