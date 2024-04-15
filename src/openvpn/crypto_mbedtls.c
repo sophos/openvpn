@@ -1129,10 +1129,5 @@ ssl_tls1_PRF(const uint8_t *label, int label_len, const uint8_t *sec,
     gc_free(&gc);
     return true;
 }
-<<<<<<< HEAD
-#endif /* ifdef HAVE_MBEDTLS_SSL_TLS_PRF */
-#endif /* ENABLE_CRYPTO_MBEDTLS */
-=======
 #endif /* HAVE_MBEDTLS_SSL_TLS_PRF && defined(MBEDTLS_SSL_TLS_PRF_TLS1) */
 #endif /* ENABLE_CRYPTO_MBEDTLS */
->>>>>>> 5e4ba2896c6faa0c0b7f8b8bd520f27619e1ff11
