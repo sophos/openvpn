@@ -66,9 +66,9 @@
 
 const char title_string[] =
     PACKAGE_STRING
-#ifdef CONFIGURE_GIT_REVISION
+/*#ifdef CONFIGURE_GIT_REVISION
     " [git:" CONFIGURE_GIT_REVISION CONFIGURE_GIT_FLAGS "]"
-#endif
+#endif*/
     " " TARGET_ALIAS
 #if defined(ENABLE_CRYPTO_MBEDTLS)
     " [SSL (mbed TLS)]"
