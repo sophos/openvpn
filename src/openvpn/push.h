@@ -5,7 +5,7 @@
  *             packet encryption, packet authentication, and
  *             packet compression.
  *
- *  Copyright (C) 2002-2023 OpenVPN Inc <sales@openvpn.net>
+ *  Copyright (C) 2002-2024 OpenVPN Inc <sales@openvpn.net>
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License version 2
@@ -78,16 +78,18 @@ void send_auth_failed(struct context *c, const char *client_reason);
  * more details on message format
  */
 bool
-send_auth_pending_messages(struct tls_multi *tls_multi, const char *extra,
+send_auth_pending_messages(struct tls_multi *tls_multi,
+                           struct tls_session *session, const char *extra,
                            unsigned int timeout);
 
 void send_restart(struct context *c, const char *kill_msg);
 
 /**
  * Sends a push reply message only containin the auth-token to update
- * the auth-token on the client
+ * the auth-token on the client. Always pushes to the active session
  *
- * @param multi  - The tls_multi structure belonging to the instance to push to
+ * @param multi    - The \c tls_multi structure belonging to the instance
+ *                   to push to
  */
 void send_push_reply_auth_token(struct tls_multi *multi);
 

@@ -5,7 +5,7 @@
  *             packet encryption, packet authentication, and
  *             packet compression.
  *
- *  Copyright (C) 2002-2023 OpenVPN Inc <sales@openvpn.net>
+ *  Copyright (C) 2002-2024 OpenVPN Inc <sales@openvpn.net>
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License version 2
@@ -23,8 +23,6 @@
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
-#elif defined(_MSC_VER)
-#include "config-msvc.h"
 #endif
 
 #include "syshead.h"
@@ -366,17 +364,20 @@ check_connection_established(struct context *c)
 }
 
 bool
-send_control_channel_string_dowork(struct tls_multi *multi,
+send_control_channel_string_dowork(struct tls_session *session,
                                    const char *str, int msglevel)
 {
     struct gc_arena gc = gc_new();
     bool stat;
 
+    ASSERT(session);
+    struct key_state *ks = &session->key[KS_PRIMARY];
+
     /* buffered cleartext write onto TLS control channel */
-    stat = tls_send_payload(multi, (uint8_t *) str, strlen(str) + 1);
+    stat = tls_send_payload(ks, (uint8_t *) str, strlen(str) + 1);
 
     msg(msglevel, "SENT CONTROL [%s]: '%s' (status=%d)",
-        tls_common_name(multi, false),
+        session->common_name ? session->common_name : "UNDEF",
         sanitize_control_message(str, &gc),
         (int) stat);
 
@@ -396,8 +397,8 @@ send_control_channel_string(struct context *c, const char *str, int msglevel)
 {
     if (c->c2.tls_multi)
     {
-        bool ret = send_control_channel_string_dowork(c->c2.tls_multi,
-                                                      str, msglevel);
+        struct tls_session *session = &c->c2.tls_multi->session[TM_ACTIVE];
+        bool ret = send_control_channel_string_dowork(session, str, msglevel);
         reschedule_multi_process(c);
 
         return ret;
@@ -460,10 +461,33 @@ check_add_routes(struct context *c)
 
 /*
  * Should we exit due to inactivity timeout?
+ *
+ * In the non-dco case, the timeout is reset via register_activity()
+ * whenever there is sufficient activity on tun or link, so this function
+ * is only ever called to raise the TERM signal.
+ *
+ * With DCO, OpenVPN does not see incoming or outgoing data packets anymore
+ * and the logic needs to change - we permit the event to trigger and check
+ * kernel DCO counters here, returning and rearming the timer if there was
+ * sufficient traffic.
  */
 static void
 check_inactivity_timeout(struct context *c)
 {
+    if (dco_enabled(&c->options) && dco_get_peer_stats(c) == 0)
+    {
+        int64_t tot_bytes = c->c2.tun_read_bytes + c->c2.tun_write_bytes;
+        int64_t new_bytes = tot_bytes - c->c2.inactivity_bytes;
+
+        if (new_bytes > c->options.inactivity_minimum_bytes)
+        {
+            c->c2.inactivity_bytes = tot_bytes;
+            event_timeout_reset(&c->c2.inactivity_interval);
+
+            return;
+        }
+    }
+
     msg(M_INFO, "Inactivity timeout (--inactive), exiting");
     register_signal(c->sig, SIGTERM, "inactive");
 }
@@ -1023,6 +1047,24 @@ process_incoming_link_part1(struct context *c, struct link_socket_info *lsi, boo
 
         if (c->c2.tls_multi)
         {
+            uint8_t opcode = *BPTR(&c->c2.buf) >> P_OPCODE_SHIFT;
+
+            /*
+             * If DCO is enabled, the kernel drivers require that the
+             * other end only sends P_DATA_V2 packets. V1 are unknown
+             * to kernel and passed to userland, but we cannot handle them
+             * either because crypto context is missing - so drop the packet.
+             *
+             * This can only happen with particular old (2.4.0-2.4.4) servers.
+             */
+            if ((opcode == P_DATA_V1) && dco_enabled(&c->options))
+            {
+                msg(D_LINK_ERRORS,
+                    "Data Channel Offload doesn't support DATA_V1 packets. "
+                    "Upgrade your server to 2.4.5 or newer.");
+                c->c2.buf.len = 0;
+            }
+
             /*
              * If tls_pre_decrypt returns true, it means the incoming
              * packet was a good TLS control channel packet.  If so, TLS code
@@ -1033,19 +1075,9 @@ process_incoming_link_part1(struct context *c, struct link_socket_info *lsi, boo
              * will load crypto_options with the correct encryption key
              * and return false.
              */
-            uint8_t opcode = *BPTR(&c->c2.buf) >> P_OPCODE_SHIFT;
             if (tls_pre_decrypt(c->c2.tls_multi, &c->c2.from, &c->c2.buf, &co,
                                 floated, &ad_start))
             {
-                /* Restore pre-NCP frame parameters */
-                if (is_hard_reset_method2(opcode))
-                {
-                    c->c2.frame = c->c2.frame_initial;
-#ifdef ENABLE_FRAGMENT
-                    c->c2.frame_fragment = c->c2.frame_fragment_initial;
-#endif
-                }
-
                 interval_action(&c->c2.tmp_int);
 
                 /* reset packet received timer if TLS packet */
@@ -1191,7 +1223,6 @@ static void
 process_incoming_dco(struct context *c)
 {
 #if defined(ENABLE_DCO) && (defined(TARGET_LINUX) || defined(TARGET_FREEBSD))
-    struct link_socket_info *lsi = get_link_socket_info(c);
     dco_context_t *dco = &c->c1.tuntap->dco;
 
     dco_do_read(dco);
@@ -1204,35 +1235,33 @@ process_incoming_dco(struct context *c)
         msg(D_DCO_DEBUG, "%s: received message for mismatching peer-id %d, "
             "expected %d", __func__, dco->dco_message_peer_id,
             c->c2.tls_multi->dco_peer_id);
-        /* ensure we also drop a message if there is one in the buffer */
-        buf_init(&dco->dco_packet_in, 0);
         return;
     }
 
-    if ((dco->dco_message_type == OVPN_CMD_DEL_PEER)
-        && (dco->dco_del_peer_reason == OVPN_DEL_PEER_REASON_EXPIRED))
+    switch (dco->dco_message_type)
     {
-        msg(D_DCO_DEBUG, "%s: received peer expired notification of for peer-id "
-            "%d", __func__, dco->dco_message_peer_id);
-        trigger_ping_timeout_signal(c);
-        return;
+        case OVPN_CMD_DEL_PEER:
+            if (dco->dco_del_peer_reason == OVPN_DEL_PEER_REASON_EXPIRED)
+            {
+                msg(D_DCO_DEBUG, "%s: received peer expired notification of for peer-id "
+                    "%d", __func__, dco->dco_message_peer_id);
+                trigger_ping_timeout_signal(c);
+                return;
+            }
+            break;
+
+        case OVPN_CMD_SWAP_KEYS:
+            msg(D_DCO_DEBUG, "%s: received key rotation notification for peer-id %d",
+                __func__, dco->dco_message_peer_id);
+            tls_session_soft_reset(c->c2.tls_multi);
+            break;
+
+        default:
+            msg(D_DCO_DEBUG, "%s: received message of type %u - ignoring", __func__,
+                dco->dco_message_type);
+            return;
     }
 
-    if (dco->dco_message_type != OVPN_CMD_PACKET)
-    {
-        msg(D_DCO_DEBUG, "%s: received message of type %u - ignoring", __func__,
-            dco->dco_message_type);
-        return;
-    }
-
-    struct buffer orig_buff = c->c2.buf;
-    c->c2.buf = dco->dco_packet_in;
-    c->c2.from = lsi->lsa->actual;
-
-    process_incoming_link(c);
-
-    c->c2.buf = orig_buff;
-    buf_init(&dco->dco_packet_in, 0);
 #endif /* if defined(ENABLE_DCO) && (defined(TARGET_LINUX) || defined(TARGET_FREEBSD)) */
 }
 
@@ -1687,30 +1716,6 @@ process_ip_header(struct context *c, unsigned int flags, struct buffer *buf)
 }
 
 /*
- * Linux DCO implementations pass the socket to the kernel and
- * disallow usage of it from userland for TCP, so (control) packets
- * sent and received by OpenVPN need to go through the DCO interface.
- *
- * Windows DCO needs control packets to be sent via the normal
- * standard Overlapped I/O.
- *
- * FreeBSD DCO allows control packets to pass through the socket in both
- * directions.
- *
- * Hide that complexity (...especially if more platforms show up
- * in the future...) in a small inline function.
- */
-static inline bool
-should_use_dco_socket(struct link_socket *ls)
-{
-#if defined(TARGET_LINUX)
-    return ls->dco_installed && proto_is_tcp(ls->info.proto);
-#else
-    return false;
-#endif
-}
-
-/*
  * Input: c->c2.to_link
  */
 
@@ -1783,17 +1788,7 @@ process_outgoing_link(struct context *c)
                 socks_preprocess_outgoing_link(c, &to_addr, &size_delta);
 
                 /* Send packet */
-                if (should_use_dco_socket(c->c2.link_socket))
-                {
-                    size = dco_do_write(&c->c1.tuntap->dco,
-                                        c->c2.tls_multi->dco_peer_id,
-                                        &c->c2.to_link);
-                }
-                else
-                {
-                    size = link_socket_write(c->c2.link_socket, &c->c2.to_link,
-                                             to_addr);
-                }
+                size = link_socket_write(c->c2.link_socket, &c->c2.to_link, to_addr);
 
                 /* Undo effect of prepend */
                 link_socket_write_post_size_adjust(&size, size_delta, &c->c2.to_link);

@@ -5,7 +5,7 @@
  *             packet encryption, packet authentication, and
  *             packet compression.
  *
- *  Copyright (C) 2021-2023 Selva Nair <selva.nair@gmail.com>
+ *  Copyright (C) 2021-2024 Selva Nair <selva.nair@gmail.com>
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by the
@@ -24,8 +24,6 @@
 
 #ifdef HAVE_CONFIG_H
 #include <config.h>
-#elif defined(_MSC_VER)
-#include "config-msvc.h"
 #endif
 
 #include "syshead.h"
@@ -399,6 +397,51 @@ done:
     *enc_len = out_len; /* assignment safe as out_len is > 0 at this point */
 
     return ret;
+}
+
+/**
+ * Helper to convert ECDSA signature with r and s concatenated
+ * to a DER encoded format used by OpenSSL.
+ * Returns the size of the converted signature or <= 0 on error.
+ * On success, buf is overwritten by the DER encoded signature.
+ */
+int
+ecdsa_bin2der(unsigned char *buf, int len, size_t capacity)
+{
+    ECDSA_SIG *ecsig = NULL;
+    int rlen = len/2;
+    BIGNUM *r = BN_bin2bn(buf, rlen, NULL);
+    BIGNUM *s = BN_bin2bn(buf+rlen, rlen, NULL);
+    if (!r || !s)
+    {
+        goto err;
+    }
+    ecsig = ECDSA_SIG_new(); /* this does not allocate r, s */
+    if (!ecsig)
+    {
+        goto err;
+    }
+    if (!ECDSA_SIG_set0(ecsig, r, s)) /* ecsig takes ownership of r and s */
+    {
+        ECDSA_SIG_free(ecsig);
+        goto err;
+    }
+
+    int derlen = i2d_ECDSA_SIG(ecsig, NULL);
+    if (derlen > (int) capacity)
+    {
+        ECDSA_SIG_free(ecsig);
+        msg(M_NONFATAL, "Error: DER encoded ECDSA signature is too long (%d)\n", derlen);
+        return 0;
+    }
+    derlen = i2d_ECDSA_SIG(ecsig, &buf);
+    ECDSA_SIG_free(ecsig);
+    return derlen;
+
+err:
+    BN_free(r); /* it is ok to free NULL BN */
+    BN_free(s);
+    return 0;
 }
 
 #endif /* HAVE_XKEY_PROVIDER */

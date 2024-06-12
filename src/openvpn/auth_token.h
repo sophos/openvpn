@@ -5,7 +5,7 @@
  *             packet encryption, packet authentication, and
  *             packet compression.
  *
- *  Copyright (C) 2002-2023 OpenVPN Inc <sales@openvpn.net>
+ *  Copyright (C) 2002-2024 OpenVPN Inc <sales@openvpn.net>
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License version 2
@@ -43,7 +43,7 @@
  *
  * The second timestamp is the time the token was renewed/regenerated and is used
  * to determine if this token has been renewed in the acceptable time range
- * (2 * renogiation timeout)
+ * (2 * renegotiation timeout)
  *
  * The session id is a random string of 12 byte (or 16 in base64) that is not
  * used by OpenVPN itself but kept intact so that external logging/management

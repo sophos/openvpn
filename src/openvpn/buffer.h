@@ -5,7 +5,7 @@
  *             packet encryption, packet authentication, and
  *             packet compression.
  *
- *  Copyright (C) 2002-2023 OpenVPN Inc <sales@openvpn.net>
+ *  Copyright (C) 2002-2024 OpenVPN Inc <sales@openvpn.net>
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License version 2
@@ -1086,7 +1086,7 @@ gc_reset(struct gc_arena *a)
     }
 
 static inline void
-check_malloc_return(const void *p)
+check_malloc_return(void *p)
 {
     if (!p)
     {

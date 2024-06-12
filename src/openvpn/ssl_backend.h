@@ -5,7 +5,7 @@
  *             packet encryption, packet authentication, and
  *             packet compression.
  *
- *  Copyright (C) 2002-2023 OpenVPN Inc <sales@openvpn.net>
+ *  Copyright (C) 2002-2024 OpenVPN Inc <sales@openvpn.net>
  *  Copyright (C) 2010-2021 Fox Crypto B.V. <openvpn@foxcrypto.com>
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -391,6 +391,7 @@ void backend_tls_ctx_reload_crl(struct tls_root_ctx *ssl_ctx,
 
 #define EXPORT_KEY_DATA_LABEL       "EXPORTER-OpenVPN-datakeys"
 #define EXPORT_P2P_PEERID_LABEL     "EXPORTER-OpenVPN-p2p-peerid"
+#define EXPORT_DYNAMIC_TLS_CRYPT_LABEL  "EXPORTER-OpenVPN-dynamic-tls-crypt"
 /**
  * Keying Material Exporters [RFC 5705] allows additional keying material to be
  * derived from existing TLS channel. This exported keying material can then be

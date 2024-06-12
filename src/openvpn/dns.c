@@ -5,7 +5,7 @@
  *             packet encryption, packet authentication, and
  *             packet compression.
  *
- *  Copyright (C) 2022-2023 OpenVPN Inc <sales@openvpn.net>
+ *  Copyright (C) 2022-2024 OpenVPN Inc <sales@openvpn.net>
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License version 2
@@ -23,8 +23,6 @@
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
-#elif defined(_MSC_VER)
-#include "config-msvc.h"
 #endif
 
 #include "syshead.h"
@@ -64,7 +62,7 @@ dns_server_addr_parse(struct dns_server *server, const char *addr)
     char addrcopy[INET6_ADDRSTRLEN] = {0};
     size_t copylen = 0;
     in_port_t port = 0;
-    int af;
+    sa_family_t af;
 
     char *first_colon = strchr(addr, ':');
     char *last_colon = strrchr(addr, ':');
@@ -115,20 +113,25 @@ dns_server_addr_parse(struct dns_server *server, const char *addr)
         return false;
     }
 
+    if (server->addr_count >= SIZE(server->addr))
+    {
+        return false;
+    }
+
     if (ai->ai_family == AF_INET)
     {
         struct sockaddr_in *sin = (struct sockaddr_in *)ai->ai_addr;
-        server->addr4_defined = true;
-        server->addr4.s_addr = ntohl(sin->sin_addr.s_addr);
-        server->port4 = port;
+        server->addr[server->addr_count].in.a4.s_addr = ntohl(sin->sin_addr.s_addr);
     }
     else
     {
         struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)ai->ai_addr;
-        server->addr6_defined = true;
-        server->addr6 = sin6->sin6_addr;
-        server->port6 = port;
+        server->addr[server->addr_count].in.a6 = sin6->sin6_addr;
     }
+
+    server->addr[server->addr_count].family = af;
+    server->addr[server->addr_count].port = port;
+    server->addr_count += 1;
 
     freeaddrinfo(ai);
     return true;
@@ -197,7 +200,7 @@ dns_options_verify(int msglevel, const struct dns_options *o)
         o->servers ? o->servers : o->servers_prepull;
     while (server)
     {
-        if (!server->addr4_defined && !server->addr6_defined)
+        if (server->addr_count == 0)
         {
             msg(msglevel, "ERROR: dns server %ld does not have an address assigned", server->priority);
             return false;
@@ -376,35 +379,30 @@ setenv_dns_options(const struct dns_options *o, struct env_set *es)
 
     for (i = 1, s = o->servers; s != NULL; i++, s = s->next)
     {
-        if (s->addr4_defined)
+        for (j = 0; j < s->addr_count; ++j)
         {
-            setenv_dns_option(es, "dns_server_%d_address4", i, -1,
-                              print_in_addr_t(s->addr4.s_addr, 0, &gc));
-        }
-        if (s->port4)
-        {
-            setenv_dns_option(es, "dns_server_%d_port4", i, -1,
-                              print_in_port_t(s->port4, &gc));
-        }
-
-        if (s->addr6_defined)
-        {
-            setenv_dns_option(es, "dns_server_%d_address6", i, -1,
-                              print_in6_addr(s->addr6, 0, &gc));
-        }
-        if (s->port6)
-        {
-            setenv_dns_option(es, "dns_server_%d_port6", i, -1,
-                              print_in_port_t(s->port6, &gc));
+            if (s->addr[j].family == AF_INET)
+            {
+                setenv_dns_option(es, "dns_server_%d_address_%d", i, j + 1,
+                                  print_in_addr_t(s->addr[j].in.a4.s_addr, 0, &gc));
+            }
+            else
+            {
+                setenv_dns_option(es, "dns_server_%d_address_%d", i, j + 1,
+                                  print_in6_addr(s->addr[j].in.a6, 0, &gc));
+            }
+            if (s->addr[j].port)
+            {
+                setenv_dns_option(es, "dns_server_%d_port_%d", i, j + 1,
+                                  print_in_port_t(s->addr[j].port, &gc));
+            }
         }
 
         if (s->domains)
         {
-            const char *format = s->domain_type == DNS_RESOLVE_DOMAINS ?
-                                 "dns_server_%d_resolve_domain_%d" : "dns_server_%d_exclude_domain_%d";
             for (j = 1, d = s->domains; d != NULL; j++, d = d->next)
             {
-                setenv_dns_option(es, format, i, j, d->name);
+                setenv_dns_option(es, "dns_server_%d_resolve_domain_%d", i, j, d->name);
             }
         }
 
@@ -439,30 +437,29 @@ show_dns_options(const struct dns_options *o)
     {
         msg(D_SHOW_PARMS, "  DNS server #%d:", i++);
 
-        if (server->addr4_defined)
+        for (int j = 0; j < server->addr_count; ++j)
         {
-            const char *addr = print_in_addr_t(server->addr4.s_addr, 0, &gc);
-            if (server->port4)
+            const char *addr;
+            const char *fmt_port;
+            if (server->addr[j].family == AF_INET)
             {
-                const char *port = print_in_port_t(server->port4, &gc);
-                msg(D_SHOW_PARMS, "    address4 = %s:%s", addr, port);
+                addr = print_in_addr_t(server->addr[j].in.a4.s_addr, 0, &gc);
+                fmt_port = "    address = %s:%s";
             }
             else
             {
-                msg(D_SHOW_PARMS, "    address4 = %s", addr);
+                addr = print_in6_addr(server->addr[j].in.a6, 0, &gc);
+                fmt_port = "    address = [%s]:%s";
             }
-        }
-        if (server->addr6_defined)
-        {
-            const char *addr = print_in6_addr(server->addr6, 0, &gc);
-            if (server->port6)
+
+            if (server->addr[j].port)
             {
-                const char *port = print_in_port_t(server->port6, &gc);
-                msg(D_SHOW_PARMS, "    address6 = [%s]:%s", addr, port);
+                const char *port = print_in_port_t(server->addr[j].port, &gc);
+                msg(D_SHOW_PARMS, fmt_port, addr, port);
             }
             else
             {
-                msg(D_SHOW_PARMS, "    address6 = %s", addr);
+                msg(D_SHOW_PARMS, "    address = %s", addr);
             }
         }
 
@@ -483,14 +480,7 @@ show_dns_options(const struct dns_options *o)
         struct dns_domain *domain = server->domains;
         if (domain)
         {
-            if (server->domain_type == DNS_RESOLVE_DOMAINS)
-            {
-                msg(D_SHOW_PARMS, "    resolve domains:");
-            }
-            else
-            {
-                msg(D_SHOW_PARMS, "    exclude domains:");
-            }
+            msg(D_SHOW_PARMS, "    resolve domains:");
             while (domain)
             {
                 msg(D_SHOW_PARMS, "      %s", domain->name);

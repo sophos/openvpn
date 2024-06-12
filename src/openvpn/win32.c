@@ -1,3 +1,4 @@
+
 /*
  *  OpenVPN -- An application to securely tunnel IP networks
  *             over a single UDP port, with support for SSL/TLS-based
@@ -5,7 +6,7 @@
  *             packet encryption, packet authentication, and
  *             packet compression.
  *
- *  Copyright (C) 2002-2023 OpenVPN Inc <sales@openvpn.net>
+ *  Copyright (C) 2002-2024 OpenVPN Inc <sales@openvpn.net>
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License version 2
@@ -28,8 +29,6 @@
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
-#elif defined(_MSC_VER)
-#include "config-msvc.h"
 #endif
 
 #include "syshead.h"
@@ -47,11 +46,7 @@
 
 #include "memdbg.h"
 
-#ifdef HAVE_VERSIONHELPERS_H
 #include <versionhelpers.h>
-#else
-#include "compat-versionhelpers.h"
-#endif
 
 #include "block_dns.h"
 
@@ -173,8 +168,7 @@ init_security_attributes_allow_all(struct security_attributes *obj)
 void
 overlapped_io_init(struct overlapped_io *o,
                    const struct frame *frame,
-                   BOOL event_state,
-                   bool tuntap_buffer)  /* if true: tuntap buffer, if false: socket buffer */
+                   BOOL event_state)
 {
     CLEAR(*o);
 
@@ -186,7 +180,7 @@ overlapped_io_init(struct overlapped_io *o,
     }
 
     /* allocate buffer for overlapped I/O */
-    alloc_buf_sock_tun(&o->buf_init, frame, tuntap_buffer);
+    alloc_buf_sock_tun(&o->buf_init, frame);
 }
 
 void
@@ -510,19 +504,19 @@ win32_signal_open(struct win32_signal *ws,
         && !HANDLE_DEFINED(ws->in.read) && exit_event_name)
     {
         struct security_attributes sa;
+        struct gc_arena gc = gc_new();
+        const wchar_t *exit_event_nameW = wide_string(exit_event_name, &gc);
 
         if (!init_security_attributes_allow_all(&sa))
         {
             msg(M_ERR, "Error: win32_signal_open: init SA failed");
         }
 
-        ws->in.read = CreateEvent(&sa.sa,
-                                  TRUE,
-                                  exit_event_initial_state ? TRUE : FALSE,
-                                  exit_event_name);
+        ws->in.read = CreateEventW(&sa.sa, TRUE, exit_event_initial_state ? TRUE : FALSE,
+                                   exit_event_nameW);
         if (ws->in.read == NULL)
         {
-            msg(M_WARN|M_ERRNO, "NOTE: CreateEvent '%s' failed", exit_event_name);
+            msg(M_WARN|M_ERRNO, "NOTE: CreateEventW '%s' failed", exit_event_name);
         }
         else
         {
@@ -535,6 +529,7 @@ win32_signal_open(struct win32_signal *ws,
                 ws->mode = WSO_MODE_SERVICE;
             }
         }
+        gc_free(&gc);
     }
     /* set the ctrl handler in both console and service modes */
     if (!SetConsoleCtrlHandler((PHANDLER_ROUTINE) win_ctrl_handler, true))
@@ -1352,13 +1347,12 @@ win32_get_arch(arch_t *process_arch, arch_t *host_arch)
     *process_arch = ARCH_UNKNOWN;
     *host_arch = ARCH_NATIVE;
 
-    typedef BOOL (__stdcall *is_wow64_process2_t)(HANDLE, USHORT *, USHORT *);
+    typedef BOOL (WINAPI *is_wow64_process2_t)(HANDLE, USHORT *, USHORT *);
     is_wow64_process2_t is_wow64_process2 = (is_wow64_process2_t)
                                             GetProcAddress(GetModuleHandle("Kernel32.dll"), "IsWow64Process2");
 
     USHORT process_machine = 0;
     USHORT native_machine = 0;
-    BOOL is_wow64 = FALSE;
 
 #ifdef _ARM64_
     *process_arch = ARCH_ARM64;
@@ -1380,8 +1374,8 @@ win32_get_arch(arch_t *process_arch, arch_t *host_arch)
     if (is_wow64_process2)
     {
         /* check if we're running on arm64 or amd64 machine */
-        is_wow64 = is_wow64_process2(GetCurrentProcess(),
-                                     &process_machine, &native_machine);
+        BOOL is_wow64 = is_wow64_process2(GetCurrentProcess(),
+                                          &process_machine, &native_machine);
         if (is_wow64)
         {
             switch (native_machine)
@@ -1403,7 +1397,7 @@ win32_get_arch(arch_t *process_arch, arch_t *host_arch)
     else
     {
         BOOL w64 = FALSE;
-        is_wow64 = IsWow64Process(GetCurrentProcess(), &w64) && w64;
+        BOOL is_wow64 = IsWow64Process(GetCurrentProcess(), &w64) && w64;
         if (is_wow64)
         {
             /* we are unable to differentiate between arm64 and amd64
@@ -1532,27 +1526,24 @@ openvpn_swprintf(wchar_t *const str, const size_t size, const wchar_t *const for
     return (len >= 0 && len < size);
 }
 
-static BOOL
-get_install_path(WCHAR *path, DWORD size)
+bool
+get_openvpn_reg_value(const WCHAR *key, WCHAR *value, DWORD size)
 {
     WCHAR reg_path[256];
-    HKEY key;
-    BOOL res = FALSE;
+    HKEY hkey;
     openvpn_swprintf(reg_path, _countof(reg_path), L"SOFTWARE\\" PACKAGE_NAME);
 
-    LONG status = RegOpenKeyExW(HKEY_LOCAL_MACHINE, reg_path, 0, KEY_READ, &key);
+    LONG status = RegOpenKeyExW(HKEY_LOCAL_MACHINE, reg_path, 0, KEY_READ, &hkey);
     if (status != ERROR_SUCCESS)
     {
-        return res;
+        return false;
     }
 
-    /* The default value of REG_KEY is the install path */
-    status = RegGetValueW(key, NULL, NULL, RRF_RT_REG_SZ, NULL, (LPBYTE)path, &size);
-    res = status == ERROR_SUCCESS;
+    status = RegGetValueW(hkey, NULL, key, RRF_RT_REG_SZ, NULL, (LPBYTE)value, &size);
 
-    RegCloseKey(key);
+    RegCloseKey(hkey);
 
-    return res;
+    return status == ERROR_SUCCESS;
 }
 
 static void
@@ -1561,7 +1552,7 @@ set_openssl_env_vars()
     const WCHAR *ssl_fallback_dir = L"C:\\Windows\\System32";
 
     WCHAR install_path[MAX_PATH] = { 0 };
-    if (!get_install_path(install_path, _countof(install_path)))
+    if (!get_openvpn_reg_value(NULL, install_path, _countof(install_path)))
     {
         /* if we cannot find installation path from the registry,
          * use Windows directory as a fallback
@@ -1640,4 +1631,60 @@ win32_sleep(const int n)
         }
     }
 }
+
+bool
+plugin_in_trusted_dir(const WCHAR *plugin_path)
+{
+    /* UNC paths are not allowed */
+    if (wcsncmp(plugin_path, L"\\\\", 2) == 0)
+    {
+        msg(M_WARN, "UNC paths for plugins are not allowed.");
+        return false;
+    }
+
+    WCHAR plugin_dir[MAX_PATH] = { 0 };
+
+    /* Attempt to retrieve the trusted plugin directory path from the registry,
+     * using installation path as a fallback */
+    if (!get_openvpn_reg_value(L"plugin_dir", plugin_dir, _countof(plugin_dir))
+        && !get_openvpn_reg_value(NULL, plugin_dir, _countof(plugin_dir)))
+    {
+        msg(M_WARN, "Installation path could not be determined.");
+    }
+
+    /* Get the system directory */
+    WCHAR system_dir[MAX_PATH] = { 0 };
+    if (GetSystemDirectoryW(system_dir, _countof(system_dir)) == 0)
+    {
+        msg(M_NONFATAL | M_ERRNO, "Failed to get system directory.");
+    }
+
+    if ((wcslen(plugin_dir) == 0) && (wcslen(system_dir) == 0))
+    {
+        return false;
+    }
+
+    WCHAR normalized_plugin_dir[MAX_PATH] = { 0 };
+
+    /* Normalize the plugin dir */
+    if (wcslen(plugin_dir) > 0)
+    {
+        if (!GetFullPathNameW(plugin_dir, MAX_PATH, normalized_plugin_dir, NULL))
+        {
+            msg(M_NONFATAL | M_ERRNO, "Failed to normalize plugin dir.");
+            return false;
+        }
+    }
+
+    /* Check if the plugin path resides within the plugin/install directory */
+    if ((wcslen(normalized_plugin_dir) > 0) && (wcsnicmp(normalized_plugin_dir,
+                                                         plugin_path, wcslen(normalized_plugin_dir)) == 0))
+    {
+        return true;
+    }
+
+    /* Fallback to the system directory */
+    return wcsnicmp(system_dir, plugin_path, wcslen(system_dir)) == 0;
+}
+
 #endif /* ifdef _WIN32 */

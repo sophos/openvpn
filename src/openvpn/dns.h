@@ -5,7 +5,7 @@
  *             packet encryption, packet authentication, and
  *             packet compression.
  *
- *  Copyright (C) 2022-2023 OpenVPN Inc <sales@openvpn.net>
+ *  Copyright (C) 2022-2024 OpenVPN Inc <sales@openvpn.net>
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License version 2
@@ -27,12 +27,6 @@
 #include "buffer.h"
 #include "env_set.h"
 
-enum dns_domain_type {
-    DNS_DOMAINS_UNSET,
-    DNS_RESOLVE_DOMAINS,
-    DNS_EXCLUDE_DOMAINS
-};
-
 enum dns_security {
     DNS_SECURITY_UNSET,
     DNS_SECURITY_NO,
@@ -52,17 +46,22 @@ struct dns_domain {
     const char *name;
 };
 
+struct dns_server_addr
+{
+    union {
+        struct in_addr a4;
+        struct in6_addr a6;
+    } in;
+    sa_family_t family;
+    in_port_t port;
+};
+
 struct dns_server {
     struct dns_server *next;
     long priority;
-    bool addr4_defined;
-    bool addr6_defined;
-    struct in_addr addr4;
-    struct in6_addr addr6;
-    in_port_t port4;
-    in_port_t port6;
+    size_t addr_count;
+    struct dns_server_addr addr[8];
     struct dns_domain *domains;
-    enum dns_domain_type domain_type;
     enum dns_security dnssec;
     enum dns_server_transport transport;
     const char *sni;

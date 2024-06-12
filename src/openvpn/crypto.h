@@ -5,7 +5,7 @@
  *             packet encryption, packet authentication, and
  *             packet compression.
  *
- *  Copyright (C) 2002-2023 OpenVPN Inc <sales@openvpn.net>
+ *  Copyright (C) 2002-2024 OpenVPN Inc <sales@openvpn.net>
  *  Copyright (C) 2010-2021 Fox Crypto B.V. <openvpn@foxcrypto.com>
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -234,7 +234,14 @@ struct crypto_options
      *   both sending and receiving
      *   directions. */
     struct packet_id packet_id; /**< Current packet ID state for both
-                                 *   sending and receiving directions. */
+                                 *   sending and receiving directions.
+                                 *
+                                 *   This contains the packet id that is
+                                 *   used for replay protection.
+                                 *
+                                 *   The packet id also used as the IV
+                                 *   for AEAD/OFB/CFG ciphers.
+                                 *   */
     struct packet_id_persist *pid_persist;
     /**< Persistent packet ID state for
      *   keeping state between successive
@@ -267,6 +274,10 @@ struct crypto_options
 #define CO_USE_CC_EXIT_NOTIFY       (1<<6)
     /**< Bit-flag indicating that explicit exit notifies should be
      * sent via the control channel instead of using an OCC message
+     */
+#define CO_USE_DYNAMIC_TLS_CRYPT   (1<<7)
+    /**< Bit-flag indicating that renegotiations are using tls-crypt
+     *   with a TLS-EKM derived key.
      */
 
     unsigned int flags;         /**< Bit-flags determining behavior of
@@ -422,12 +433,6 @@ bool crypto_check_replay(struct crypto_options *opt,
                          struct gc_arena *gc);
 
 
-/** Calculate crypto overhead and adjust frame to account for that */
-void crypto_adjust_frame_parameters(struct frame *frame,
-                                    const struct key_type *kt,
-                                    bool packet_id,
-                                    bool packet_id_long_form);
-
 /** Calculate the maximum overhead that our encryption has
  * on a packet. This does not include needed additional buffer size
  *
@@ -530,7 +535,8 @@ void key2_print(const struct key2 *k,
 void crypto_read_openvpn_key(const struct key_type *key_type,
                              struct key_ctx_bi *ctx, const char *key_file,
                              bool key_inline, const int key_direction,
-                             const char *key_name, const char *opt_name);
+                             const char *key_name, const char *opt_name,
+                             struct key2 *keydata);
 
 /*
  * Inline functions
@@ -590,5 +596,13 @@ create_kt(const char *cipher, const char *md, const char *optname)
 
     return kt;
 }
+
+/**
+ * Checks if the current TLS library supports the TLS 1.0 PRF with MD5+SHA1
+ * that OpenVPN uses when TLS Keying Material Export is not available.
+ *
+ * @return  true if supported, false otherwise.
+ */
+bool check_tls_prf_working(void);
 
 #endif /* CRYPTO_H */

@@ -5,7 +5,7 @@
  *             packet encryption, packet authentication, and
  *             packet compression.
  *
- *  Copyright (C) 2002-2023 OpenVPN Inc <sales@openvpn.net>
+ *  Copyright (C) 2002-2024 OpenVPN Inc <sales@openvpn.net>
  *  Copyright (C) 2010-2021 Fox Crypto B.V. <openvpn@foxcrypto.com>
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -24,11 +24,10 @@
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
-#elif defined(_MSC_VER)
-#include "config-msvc.h"
 #endif
 
 #include "syshead.h"
+#include <string.h>
 
 #include "crypto.h"
 #include "error.h"
@@ -835,7 +834,7 @@ init_key_ctx(struct key_ctx *ctx, const struct key *key,
         cipher_ctx_init(ctx->cipher, key->cipher, kt->cipher, enc);
 
         const char *ciphername = cipher_kt_name(kt->cipher);
-        msg(D_HANDSHAKE, "%s: Cipher '%s' initialized with %d bit key",
+        msg(D_CIPHER_INIT, "%s: Cipher '%s' initialized with %d bit key",
             prefix, ciphername, cipher_kt_key_size(kt->cipher) * 8);
 
         dmsg(D_SHOW_KEYS, "%s: CIPHER KEY: %s", prefix,
@@ -850,7 +849,7 @@ init_key_ctx(struct key_ctx *ctx, const struct key *key,
         ctx->hmac = hmac_ctx_new();
         hmac_ctx_init(ctx->hmac, key->hmac, kt->digest);
 
-        msg(D_HANDSHAKE,
+        msg(D_CIPHER_INIT,
             "%s: Using %d bit message hash '%s' for HMAC authentication",
             prefix, md_kt_size(kt->digest) * 8, md_kt_name(kt->digest));
 
@@ -1123,7 +1122,8 @@ void
 crypto_read_openvpn_key(const struct key_type *key_type,
                         struct key_ctx_bi *ctx, const char *key_file,
                         bool key_inline, const int key_direction,
-                        const char *key_name, const char *opt_name)
+                        const char *key_name, const char *opt_name,
+                        struct key2 *keydata)
 {
     struct key2 key2;
     struct key_direction_state kds;
@@ -1151,6 +1151,10 @@ crypto_read_openvpn_key(const struct key_type *key_type,
 
     /* initialize key in both directions */
     init_key_ctx_bi(ctx, &key2, key_direction, key_type, key_name);
+    if (keydata)
+    {
+        *keydata = key2;
+    }
     secure_memzero(&key2, sizeof(key2));
 }
 
@@ -1813,4 +1817,23 @@ cleanup:
     }
     gc_free(&gc);
     return ret;
+}
+
+bool
+check_tls_prf_working(void)
+{
+    /* Modern TLS libraries might no longer support the TLS 1.0 PRF with
+     * MD5+SHA1. This allows us to establish connections only
+     * with other 2.6.0+ OpenVPN peers.
+     * Do a simple dummy test here to see if it works. */
+    const char *seed = "tls1-prf-test";
+    const char *secret = "tls1-prf-test-secret";
+    uint8_t out[8];
+    uint8_t expected_out[] = { 'q', 'D', '\xfe', '%', '@', 's', 'u', '\x95' };
+
+    int ret = ssl_tls1_PRF((uint8_t *)seed, (int) strlen(seed),
+                           (uint8_t *)secret, (int) strlen(secret),
+                           out, sizeof(out));
+
+    return (ret && memcmp(out, expected_out, sizeof(out)) == 0);
 }

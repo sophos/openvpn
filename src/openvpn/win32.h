@@ -5,7 +5,7 @@
  *             packet encryption, packet authentication, and
  *             packet compression.
  *
- *  Copyright (C) 2002-2023 OpenVPN Inc <sales@openvpn.net>
+ *  Copyright (C) 2002-2024 OpenVPN Inc <sales@openvpn.net>
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License version 2
@@ -38,6 +38,7 @@
 #define WIN_ROUTE_PATH_SUFFIX "\\system32\\route.exe"
 #define WIN_IPCONFIG_PATH_SUFFIX "\\system32\\ipconfig.exe"
 #define WIN_NET_PATH_SUFFIX "\\system32\\net.exe"
+#define WMIC_PATH_SUFFIX "\\system32\\wbem\\wmic.exe"
 
 /*
  * Win32-specific OpenVPN code, targeted at the mingw
@@ -217,8 +218,7 @@ struct overlapped_io {
 
 void overlapped_io_init(struct overlapped_io *o,
                         const struct frame *frame,
-                        BOOL event_state,
-                        bool tuntap_buffer);
+                        BOOL event_state);
 
 void overlapped_io_close(struct overlapped_io *o);
 
@@ -332,6 +332,33 @@ openvpn_swprintf(wchar_t *const str, const size_t size, const wchar_t *const for
 
 /* Sleep that can be interrupted by signals and exit event */
 void win32_sleep(const int n);
+
+/**
+ * @brief Fetches a registry value for OpenVPN registry key.
+ *
+ * @param key Registry value name to fetch.
+ * @param value Buffer to store the fetched string value.
+ * @param size Size of `value` buffer in bytes.
+ * @return `true` if successful, `false` otherwise.
+ */
+bool
+get_openvpn_reg_value(const WCHAR *key, WCHAR *value, DWORD size);
+
+/**
+ * @brief Checks if a plugin is located in a trusted directory.
+ *
+ * Verifies the plugin's path against a trusted directory, which is:
+ *
+ * - "plugin_dir" registry value or installation path, if the registry key is missing
+ * - system directory
+ *
+ * UNC paths are explicitly disallowed.
+ *
+ * @param plugin_path Normalized path to the plugin.
+ * @return \c true if the plugin is in a trusted directory and not a UNC path; \c false otherwise.
+ */
+bool
+plugin_in_trusted_dir(const WCHAR *plugin_path);
 
 #endif /* ifndef OPENVPN_WIN32_H */
 #endif /* ifdef _WIN32 */

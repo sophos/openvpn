@@ -5,7 +5,7 @@
  *             packet encryption, packet authentication, and
  *             packet compression.
  *
- *  Copyright (C) 2002-2023 OpenVPN Inc <sales@openvpn.net>
+ *  Copyright (C) 2002-2024 OpenVPN Inc <sales@openvpn.net>
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License version 2
@@ -23,8 +23,6 @@
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
-#elif defined(_MSC_VER)
-#include "config-msvc.h"
 #endif
 
 #include "syshead.h"
@@ -108,7 +106,7 @@ man_help(void)
     msg(M_CLIENT, "client-auth-nt CID KID : Authenticate client-id/key-id CID/KID");
     msg(M_CLIENT, "client-deny CID KID R [CR] : Deny auth client-id/key-id CID/KID with log reason");
     msg(M_CLIENT, "                             text R and optional client reason text CR");
-    msg(M_CLIENT, "client-pending-auth CID MSG timeout : Instruct OpenVPN to send AUTH_PENDING and INFO_PRE msg");
+    msg(M_CLIENT, "client-pending-auth CID KID MSG timeout : Instruct OpenVPN to send AUTH_PENDING and INFO_PRE msg");
     msg(M_CLIENT, "                                      to the client and wait for a final client-auth/client-deny");
     msg(M_CLIENT, "client-kill CID [M]    : Kill client instance CID with message M (def=RESTART)");
     msg(M_CLIENT, "env-filter [level]     : Set env-var filter level");
@@ -1042,22 +1040,25 @@ parse_uint(const char *str, const char *what, unsigned int *uint)
  *
  * @param man           The management interface struct
  * @param cid_str       The CID in string form
+ * @param kid_str       The key ID in string form
  * @param extra         The string to be send to the client containing
  *                      the information of the additional steps
  */
 static void
 man_client_pending_auth(struct management *man, const char *cid_str,
-                        const char *extra, const char *timeout_str)
+                        const char *kid_str, const char *extra,
+                        const char *timeout_str)
 {
     unsigned long cid = 0;
+    unsigned int kid = 0;
     unsigned int timeout = 0;
-    if (parse_cid(cid_str, &cid)
+    if (parse_cid(cid_str, &cid) && parse_uint(kid_str, "KID", &kid)
         && parse_uint(timeout_str, "TIMEOUT", &timeout))
     {
         if (man->persist.callback.client_pending_auth)
         {
             bool ret = (*man->persist.callback.client_pending_auth)
-                           (man->persist.callback.arg, cid, extra, timeout);
+                           (man->persist.callback.arg, cid, kid, extra, timeout);
 
             if (ret)
             {
@@ -1594,9 +1595,9 @@ man_dispatch_command(struct management *man, struct status_output *so, const cha
     }
     else if (streq(p[0], "client-pending-auth"))
     {
-        if (man_need(man, p, 3, 0))
+        if (man_need(man, p, 4, 0))
         {
-            man_client_pending_auth(man, p[1], p[2], p[3]);
+            man_client_pending_auth(man, p[1], p[2], p[3], p[4]);
         }
     }
     else if (streq(p[0], "rsa-sig"))
@@ -2195,6 +2196,10 @@ man_recv_with_fd(int fd, void *ptr, size_t nbytes, int flags, int *recvfd)
 bool
 management_android_control(struct management *man, const char *command, const char *msg)
 {
+    if (!man)
+    {
+        msg(M_FATAL, "Required management interface not available.");
+    }
     struct user_pass up;
     CLEAR(up);
     strncpy(up.username, msg, sizeof(up.username)-1);
@@ -2254,7 +2259,7 @@ man_read(struct management *man)
         man->connection.lastfdreceived = fd;
     }
 #else  /* ifdef TARGET_ANDROID */
-    len = recv(man->connection.sd_cli, buf, sizeof(buf), MSG_NOSIGNAL);
+    len = recv(man->connection.sd_cli, (void *)buf, sizeof(buf), MSG_NOSIGNAL);
 #endif
 
     if (len == 0)
@@ -2351,7 +2356,7 @@ man_write(struct management *man)
         }
         else
 #endif
-        sent = send(man->connection.sd_cli, BPTR(buf), len, MSG_NOSIGNAL);
+        sent = send(man->connection.sd_cli, (const void *)BPTR(buf), len, MSG_NOSIGNAL);
         if (sent >= 0)
         {
             buffer_list_advance(man->connection.out, sent);

@@ -5,7 +5,7 @@
  *             packet encryption, packet authentication, and
  *             packet compression.
  *
- *  Copyright (C) 2002-2023 OpenVPN Inc <sales@openvpn.net>
+ *  Copyright (C) 2002-2024 OpenVPN Inc <sales@openvpn.net>
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License version 2
@@ -23,8 +23,6 @@
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
-#elif defined(_MSC_VER)
-#include "config-msvc.h"
 #endif
 
 #include "syshead.h"
@@ -303,7 +301,7 @@ frame_calculate_mssfix(struct frame *frame, struct key_type *kt,
 
     /* Calculate the number of bytes that the payload differs from the payload
      * MTU. This are fragment/compression/ethernet headers */
-    payload_overhead = frame_calculate_payload_overhead(frame, options, kt, true);
+    payload_overhead = frame_calculate_payload_overhead(frame->extra_tun, options, kt);
 
     /* We are in a "liberal" position with respect to MSS,
      * i.e. we assume that MSS can be calculated from MTU

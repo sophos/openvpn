@@ -5,7 +5,7 @@
  *             packet encryption, packet authentication, and
  *             packet compression.
  *
- *  Copyright (C) 2002-2023 OpenVPN Inc <sales@openvpn.net>
+ *  Copyright (C) 2002-2024 OpenVPN Inc <sales@openvpn.net>
  *  Copyright (C) 2010-2021 Fox Crypto B.V. <openvpn@foxcrypto.com>
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -275,6 +275,15 @@ struct tls_wrap_ctx
     struct buffer tls_crypt_v2_metadata;     /**< Received from client */
     bool cleanup_key_ctx;                    /**< opt.key_ctx_bi is owned by
                                               *   this context */
+    /** original key data to be xored in to the key for dynamic tls-crypt.
+     *
+     * We keep the original key data to ensure that the newly generated key
+     * for the dynamic tls-crypt has the same level of quality by using
+     * xor with the original key. This gives us the same same entropy/randomness
+     * as the original tls-crypt key to ensure the post-quantum use case of
+     * tls-crypt still holds true
+     * */
+    struct key2 original_wrap_keydata;
 };
 
 /*
@@ -326,7 +335,6 @@ struct tls_options
 
     /* cert verification parms */
     const char *verify_command;
-    const char *verify_export_cert;
     int verify_x509_type;
     const char *verify_x509_name;
     const char *crl_file;
@@ -367,6 +375,7 @@ struct tls_options
     const char *client_crresponse_script;
     bool auth_user_pass_verify_script_via_file;
     const char *tmp_dir;
+    const char *export_peer_cert_dir;
     const char *auth_user_pass_file;
     bool auth_user_pass_file_inline;
 
@@ -467,6 +476,10 @@ struct tls_session
 
     /* authenticate control packets */
     struct tls_wrap_ctx tls_wrap;
+
+    /* Specific tls-crypt for renegotiations, if this is valid,
+     * tls_wrap_reneg.mode is TLS_WRAP_CRYPT, otherwise ignore it */
+    struct tls_wrap_ctx tls_wrap_reneg;
 
     int initial_opcode;         /* our initial P_ opcode */
     struct session_id session_id; /* our random session ID */

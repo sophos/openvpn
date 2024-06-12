@@ -5,7 +5,7 @@
  *             packet encryption, packet authentication, and
  *             packet compression.
  *
- *  Copyright (C) 2002-2023 OpenVPN Inc <sales@openvpn.net>
+ *  Copyright (C) 2002-2024 OpenVPN Inc <sales@openvpn.net>
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License version 2
@@ -23,8 +23,6 @@
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
-#elif defined(_MSC_VER)
-#include "config-msvc.h"
 #endif
 
 #include "syshead.h"
@@ -695,14 +693,14 @@ x_check_status(int status,
         {
             if (extended_msg)
             {
-                msg(x_cs_info_level, "%s %s [%s]: %s (fd=%d,code=%d)", description,
+                msg(x_cs_info_level, "%s %s [%s]: %s (fd=" SOCKET_PRINTF ",code=%d)", description,
                     sock ? proto2ascii(sock->info.proto, sock->info.af, true) : "",
                     extended_msg, openvpn_strerror(my_errno, crt_error, &gc),
                     sock ? sock->sd : -1, my_errno);
             }
             else
             {
-                msg(x_cs_info_level, "%s %s: %s (fd=%d,code=%d)", description,
+                msg(x_cs_info_level, "%s %s: %s (fd=" SOCKET_PRINTF ",code=%d)", description,
                     sock ? proto2ascii(sock->info.proto, sock->info.af, true) : "",
                     openvpn_strerror(my_errno, crt_error, &gc),
                     sock ? sock->sd : -1, my_errno);
@@ -970,19 +968,24 @@ strerror_win32(DWORD errnum, struct gc_arena *gc)
 
     /* format a windows error message */
     {
-        char message[256];
+        wchar_t wmessage[256];
+        char *message = NULL;
         struct buffer out = alloc_buf_gc(256, gc);
-        const int status =  FormatMessage(
+        const DWORD status =  FormatMessageW(
             FORMAT_MESSAGE_IGNORE_INSERTS
             | FORMAT_MESSAGE_FROM_SYSTEM
             | FORMAT_MESSAGE_ARGUMENT_ARRAY,
             NULL,
             errnum,
             0,
-            message,
-            sizeof(message),
+            wmessage,
+            SIZE(wmessage),
             NULL);
-        if (!status)
+        if (status)
+        {
+            message = utf16to8(wmessage, gc);
+        }
+        if (!status || !message)
         {
             buf_printf(&out, "[Unknown Win32 Error]");
         }

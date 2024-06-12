@@ -5,7 +5,7 @@
  *             packet encryption, packet authentication, and
  *             packet compression.
  *
- *  Copyright (C) 2002-2023 OpenVPN Inc <sales@openvpn.net>
+ *  Copyright (C) 2002-2024 OpenVPN Inc <sales@openvpn.net>
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License version 2
@@ -23,8 +23,6 @@
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
-#elif defined(_MSC_VER)
-#include "config-msvc.h"
 #endif
 
 #include "syshead.h"
@@ -884,17 +882,6 @@ init_static(void)
 #ifdef TIME_TEST
     time_test();
     return false;
-#endif
-
-#ifdef TEST_GET_DEFAULT_GATEWAY
-    {
-        struct route_gateway_info rgi;
-        struct route_ipv6_gateway_info rgi6;
-        get_default_gateway(&rgi);
-        get_default_gateway_ipv6(&rgi6, NULL);
-        print_default_gateway(M_INFO, &rgi, &rgi6);
-        return false;
-    }
 #endif
 
 #ifdef GEN_PATH_TEST
@@ -1844,7 +1831,8 @@ do_open_tun(struct context *c, int *error_flags)
 #ifdef _WIN32
         /* store (hide) interactive service handle in tuntap_options */
         c->c1.tuntap->options.msg_channel = c->options.msg_channel;
-        msg(D_ROUTE, "interactive service msg_channel=%" PRIu64, (unsigned long long) c->options.msg_channel);
+        msg(D_ROUTE, "interactive service msg_channel=%" PRIuPTR,
+            (intptr_t) c->options.msg_channel);
 #endif
 
         /* allocate route list structure */
@@ -2209,6 +2197,145 @@ p2p_set_dco_keepalive(struct context *c)
     }
     return true;
 }
+
+/**
+ * Helper function for tls_print_deferred_options_results
+ * Adds the ", " delimitor if there already some data in the
+ * buffer.
+ */
+static void
+add_delim_if_non_empty(struct buffer *buf, const char *header)
+{
+    if (buf_len(buf) > strlen(header))
+    {
+        buf_printf(buf, ", ");
+    }
+}
+
+
+/**
+ * Prints the results of options imported for the data channel
+ * @param o
+ */
+static void
+tls_print_deferred_options_results(struct context *c)
+{
+    struct options *o = &c->options;
+
+    struct buffer out;
+    uint8_t line[1024] = { 0 };
+    buf_set_write(&out, line, sizeof(line));
+
+
+    if (cipher_kt_mode_aead(o->ciphername))
+    {
+        buf_printf(&out, "Data Channel: cipher '%s'",
+                   cipher_kt_name(o->ciphername));
+    }
+    else
+    {
+        buf_printf(&out, "Data Channel: cipher '%s', auth '%s'",
+                   cipher_kt_name(o->ciphername), md_kt_name(o->authname));
+    }
+
+    if (o->use_peer_id)
+    {
+        buf_printf(&out, ", peer-id: %d", o->peer_id);
+    }
+
+#ifdef USE_COMP
+    if (c->c2.comp_context)
+    {
+        buf_printf(&out, ", compression: '%s'", c->c2.comp_context->alg.name);
+    }
+#endif
+
+    msg(D_HANDSHAKE, "%s", BSTR(&out));
+
+    buf_clear(&out);
+
+    const char *header = "Timers: ";
+
+    buf_printf(&out, "%s", header);
+
+    if (o->ping_send_timeout)
+    {
+        buf_printf(&out, "ping %d", o->ping_send_timeout);
+    }
+
+    if (o->ping_rec_timeout_action != PING_UNDEF)
+    {
+        /* yes unidirectional ping is possible .... */
+        add_delim_if_non_empty(&out, header);
+
+        if (o->ping_rec_timeout_action == PING_EXIT)
+        {
+            buf_printf(&out, "ping-exit %d", o->ping_rec_timeout);
+        }
+        else
+        {
+            buf_printf(&out, "ping-restart %d", o->ping_rec_timeout);
+        }
+    }
+
+    if (o->inactivity_timeout)
+    {
+        add_delim_if_non_empty(&out, header);
+
+        buf_printf(&out, "inactive %d", o->inactivity_timeout);
+        if (o->inactivity_minimum_bytes)
+        {
+            buf_printf(&out, " %" PRIu64, o->inactivity_minimum_bytes);
+        }
+    }
+
+    if (o->session_timeout)
+    {
+        add_delim_if_non_empty(&out, header);
+        buf_printf(&out, "session-timeout %d", o->session_timeout);
+    }
+
+    if (buf_len(&out) > strlen(header))
+    {
+        msg(D_HANDSHAKE, "%s", BSTR(&out));
+    }
+
+    buf_clear(&out);
+    header = "Protocol options: ";
+    buf_printf(&out, "%s", header);
+
+    if (c->options.ce.explicit_exit_notification)
+    {
+        buf_printf(&out, "explicit-exit-notify %d",
+                   c->options.ce.explicit_exit_notification);
+    }
+    if (c->options.imported_protocol_flags)
+    {
+        add_delim_if_non_empty(&out, header);
+
+        buf_printf(&out, "protocol-flags");
+
+        if (o->imported_protocol_flags & CO_USE_CC_EXIT_NOTIFY)
+        {
+            buf_printf(&out, " cc-exit");
+        }
+        if (o->imported_protocol_flags & CO_USE_TLS_KEY_MATERIAL_EXPORT)
+        {
+            buf_printf(&out, " tls-ekm");
+        }
+        if (o->imported_protocol_flags & CO_USE_DYNAMIC_TLS_CRYPT)
+        {
+            buf_printf(&out, " dyn-tls-crypt");
+        }
+    }
+
+    if (buf_len(&out) > strlen(header))
+    {
+        msg(D_HANDSHAKE, "%s", BSTR(&out));
+    }
+}
+
+
 /**
  * This function is expected to be invoked after open_tun() was performed.
  *
@@ -2370,6 +2497,8 @@ do_up(struct context *c, bool pulled_options, unsigned int option_types_found)
             initialization_sequence_completed(c, error_flags); /* client/p2p restart with --persist-tun */
         }
 
+        tls_print_deferred_options_results(c);
+
         c->c2.do_up_ran = true;
         if (c->c2.tls_multi)
         {
@@ -2470,7 +2599,7 @@ do_deferred_options(struct context *c, const unsigned int found)
     if (found & OPT_P_TIMER)
     {
         do_init_timers(c, true);
-        msg(D_PUSH, "OPTIONS IMPORT: timers and/or timeouts modified");
+        msg(D_PUSH_DEBUG, "OPTIONS IMPORT: timers and/or timeouts modified");
     }
 
     if (found & OPT_P_EXPLICIT_NOTIFY)
@@ -2482,18 +2611,26 @@ do_deferred_options(struct context *c, const unsigned int found)
         }
         else
         {
-            msg(D_PUSH, "OPTIONS IMPORT: explicit notify parm(s) modified");
+            msg(D_PUSH_DEBUG, "OPTIONS IMPORT: explicit notify parm(s) modified");
         }
     }
 
-#ifdef USE_COMP
     if (found & OPT_P_COMP)
     {
-        msg(D_PUSH, "OPTIONS IMPORT: compression parms modified");
+        if (!check_compression_settings_valid(&c->options.comp, D_PUSH_ERRORS))
+        {
+            msg(D_PUSH_ERRORS, "OPTIONS ERROR: server pushed compression "
+                "settings that are not allowed and will result "
+                "in a non-working connection. "
+                "See also allow-compression in the manual.");
+            return false;
+        }
+#ifdef USE_COMP
+        msg(D_PUSH_DEBUG, "OPTIONS IMPORT: compression parms modified");
         comp_uninit(c->c2.comp_context);
         c->c2.comp_context = comp_init(&c->options.comp);
-    }
 #endif
+    }
 
     if (found & OPT_P_SHAPER)
     {
@@ -2540,7 +2677,7 @@ do_deferred_options(struct context *c, const unsigned int found)
 
     if (found & OPT_P_PEER_ID)
     {
-        msg(D_PUSH, "OPTIONS IMPORT: peer-id set");
+        msg(D_PUSH_DEBUG, "OPTIONS IMPORT: peer-id set");
         c->c2.tls_multi->use_peer_id = true;
         c->c2.tls_multi->peer_id = c->options.peer_id;
     }
@@ -2888,7 +3025,7 @@ do_init_crypto_static(struct context *c, const unsigned int flags)
                                 options->shared_secret_file,
                                 options->shared_secret_file_inline,
                                 options->key_direction, "Static Key Encryption",
-                                "secret");
+                                "secret", NULL);
     }
     else
     {
@@ -2928,13 +3065,15 @@ do_init_tls_wrap_key(struct context *c)
                                 options->ce.tls_auth_file,
                                 options->ce.tls_auth_file_inline,
                                 options->ce.key_direction,
-                                "Control Channel Authentication", "tls-auth");
+                                "Control Channel Authentication", "tls-auth",
+                                &c->c1.ks.original_wrap_keydata);
     }
 
     /* TLS handshake encryption+authentication (--tls-crypt) */
     if (options->ce.tls_crypt_file)
     {
         tls_crypt_init_key(&c->c1.ks.tls_wrap_key,
+                           &c->c1.ks.original_wrap_keydata,
                            options->ce.tls_crypt_file,
                            options->ce.tls_crypt_file_inline,
                            options->tls_server);
@@ -2952,6 +3091,7 @@ do_init_tls_wrap_key(struct context *c)
         else
         {
             tls_crypt_v2_init_client_key(&c->c1.ks.tls_wrap_key,
+                                         &c->c1.ks.original_wrap_keydata,
                                          &c->c1.ks.tls_crypt_v2_wkc,
                                          options->ce.tls_crypt_v2_file,
                                          options->ce.tls_crypt_v2_file_inline);
@@ -3176,7 +3316,6 @@ do_init_crypto_tls(struct context *c, const unsigned int flags)
     }
 
     to.verify_command = options->tls_verify;
-    to.verify_export_cert = options->tls_export_cert;
     to.verify_x509_type = (options->verify_x509_type & 0xff);
     to.verify_x509_name = options->verify_x509_name;
     to.crl_file = options->crl_file;
@@ -3211,6 +3350,7 @@ do_init_crypto_tls(struct context *c, const unsigned int flags)
     to.auth_user_pass_verify_script_via_file = options->auth_user_pass_verify_script_via_file;
     to.client_crresponse_script = options->client_crresponse_script;
     to.tmp_dir = options->tmp_dir;
+    to.export_peer_cert_dir = options->tls_export_peer_cert_dir;
     if (options->ccd_exclusive)
     {
         to.client_config_dir_exclusive = options->client_config_dir;
@@ -3255,9 +3395,6 @@ do_init_crypto_tls(struct context *c, const unsigned int flags)
     if (options->ce.tls_auth_file)
     {
         to.tls_wrap.mode = TLS_WRAP_AUTH;
-        to.tls_wrap.opt.key_ctx_bi = c->c1.ks.tls_wrap_key;
-        to.tls_wrap.opt.pid_persist = &c->c1.pid_persist;
-        to.tls_wrap.opt.flags |= CO_PACKET_ID_LONG_FORM;
     }
 
     /* TLS handshake encryption (--tls-crypt) */
@@ -3265,19 +3402,21 @@ do_init_crypto_tls(struct context *c, const unsigned int flags)
         || (options->ce.tls_crypt_v2_file && options->tls_client))
     {
         to.tls_wrap.mode = TLS_WRAP_CRYPT;
+    }
+
+    if (to.tls_wrap.mode == TLS_WRAP_AUTH || to.tls_wrap.mode == TLS_WRAP_CRYPT)
+    {
         to.tls_wrap.opt.key_ctx_bi = c->c1.ks.tls_wrap_key;
         to.tls_wrap.opt.pid_persist = &c->c1.pid_persist;
         to.tls_wrap.opt.flags |= CO_PACKET_ID_LONG_FORM;
-
-        if (options->ce.tls_crypt_v2_file)
-        {
-            to.tls_wrap.tls_crypt_v2_wkc = &c->c1.ks.tls_crypt_v2_wkc;
-        }
+        to.tls_wrap.original_wrap_keydata = c->c1.ks.original_wrap_keydata;
     }
 
     if (options->ce.tls_crypt_v2_file)
     {
         to.tls_crypt_v2 = true;
+        to.tls_wrap.tls_crypt_v2_wkc = &c->c1.ks.tls_crypt_v2_wkc;
+
         if (options->tls_server)
         {
             to.tls_wrap.tls_crypt_v2_server_key = c->c1.ks.tls_crypt_v2_server_key;
@@ -3333,6 +3472,7 @@ do_init_frame_tls(struct context *c)
         frame_print(&c->c2.tls_auth_standalone->frame, D_MTU_INFO,
                     "TLS-Auth MTU parms");
         c->c2.tls_auth_standalone->tls_wrap.work = alloc_buf_gc(BUF_SIZE(&c->c2.frame), &c->c2.gc);
+        c->c2.tls_auth_standalone->workbuf = alloc_buf_gc(BUF_SIZE(&c->c2.frame), &c->c2.gc);
     }
 }
 
@@ -3390,15 +3530,6 @@ do_init_frame(struct context *c)
      */
     frame_finalize_options(c, NULL);
 
-#ifdef ENABLE_FRAGMENT
-    /*
-     * Set frame parameter for fragment code.  This is necessary because
-     * the fragmentation code deals with payloads which have already been
-     * passed through the compression code.
-     */
-    c->c2.frame_fragment = c->c2.frame;
-    c->c2.frame_fragment_initial = c->c2.frame_fragment;
-#endif
 
 #if defined(ENABLE_FRAGMENT)
     /*
@@ -3594,6 +3725,14 @@ static void
 do_init_fragment(struct context *c)
 {
     ASSERT(c->options.ce.fragment);
+
+    /*
+     * Set frame parameter for fragment code.  This is necessary because
+     * the fragmentation code deals with payloads which have already been
+     * passed through the compression code.
+     */
+    c->c2.frame_fragment = c->c2.frame;
+
     frame_calculate_dynamic(&c->c2.frame_fragment, &c->c1.ks.key_type,
                             &c->options, get_link_socket_info(c));
     fragment_frame_init(c->c2.fragment, &c->c2.frame_fragment);
@@ -3731,6 +3870,8 @@ do_close_tls(struct context *c)
         md_ctx_cleanup(c->c2.pulled_options_state);
         md_ctx_free(c->c2.pulled_options_state);
     }
+
+    tls_auth_standalone_free(c->c2.tls_auth_standalone);
 }
 
 /*
@@ -3764,8 +3905,7 @@ do_close_link_socket(struct context *c)
     /* in dco-win case, link socket is a tun handle which is
      * closed in do_close_tun(). Set it to UNDEFINED so
      * we won't use WinSock API to close it. */
-    if (tuntap_is_dco_win(c->c1.tuntap) && c->c2.link_socket
-        && c->c2.link_socket->dco_installed)
+    if (tuntap_is_dco_win(c->c1.tuntap) && c->c2.link_socket)
     {
         c->c2.link_socket->sd = SOCKET_UNDEFINED;
     }
@@ -4500,8 +4640,6 @@ init_instance(struct context *c, const struct env_set *env, const unsigned int f
         c->c2.did_open_tun = do_open_tun(c, &error_flags);
     }
 
-    c->c2.frame_initial = c->c2.frame;
-
     /* print MTU info */
     do_print_data_channel_mtu_parms(c);
 
@@ -4535,14 +4673,15 @@ init_instance(struct context *c, const struct env_set *env, const unsigned int f
     if (c->mode == CM_P2P || c->mode == CM_TOP || c->mode == CM_CHILD_TCP)
     {
         link_socket_init_phase2(c);
-    }
 
-    /* Update dynamic frame calculation as exact transport socket information
-     * (IP vs IPv6) may be only available after socket phase2 has finished.
-     * This is only needed for --static or no crypto, NCP will recalculate this
-     * in tls_session_update_crypto_params (P2MP) */
-    frame_calculate_dynamic(&c->c2.frame, &c->c1.ks.key_type, &c->options,
-                            get_link_socket_info(c));
+
+        /* Update dynamic frame calculation as exact transport socket information
+         * (IP vs IPv6) may be only available after socket phase2 has finished.
+         * This is only needed for --static or no crypto, NCP will recalculate this
+         * in tls_session_update_crypto_params (P2MP) */
+        frame_calculate_dynamic(&c->c2.frame, &c->c1.ks.key_type, &c->options,
+                                get_link_socket_info(c));
+    }
 
     /*
      * Actually do UID/GID downgrade, and chroot, if requested.

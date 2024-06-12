@@ -5,9 +5,9 @@
  *             packet encryption, packet authentication, and
  *             packet compression.
  *
- *  Copyright (C) 2021-2023 Arne Schwabe <arne@rfc2549.org>
- *  Copyright (C) 2021-2023 Antonio Quartulli <a@unstable.cc>
- *  Copyright (C) 2021-2023 OpenVPN Inc <sales@openvpn.net>
+ *  Copyright (C) 2021-2024 Arne Schwabe <arne@rfc2549.org>
+ *  Copyright (C) 2021-2024 Antonio Quartulli <a@unstable.cc>
+ *  Copyright (C) 2021-2024 OpenVPN Inc <sales@openvpn.net>
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License version 2
@@ -26,8 +26,6 @@
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
-#elif defined(_MSC_VER)
-#include "config-msvc.h"
 #endif
 
 #if defined(ENABLE_DCO)
@@ -133,8 +131,6 @@ dco_get_secondary_key(struct tls_multi *multi, const struct key_state *primary)
 bool
 dco_update_keys(dco_context_t *dco, struct tls_multi *multi)
 {
-    msg(D_DCO_DEBUG, "%s: peer_id=%d", __func__, multi->dco_peer_id);
-
     /* this function checks if keys have to be swapped or erased, therefore it
      * can't do much if we don't have any key installed
      */
@@ -391,6 +387,12 @@ dco_check_startup_option(int msglevel, const struct options *o)
         return false;
     }
 
+    if (o->management_flags & MF_QUERY_PROXY)
+    {
+        msg(msglevel, "Note: --management-query-proxy disables data channel offload.");
+        return false;
+    }
+
     /* now that all options have been confirmed to be supported, check
      * if DCO is truly available on the system
      */
@@ -404,7 +406,7 @@ dco_check_option(int msglevel, const struct options *o)
     if (o->enable_ncp_fallback
         && !tls_item_in_cipher_list(o->ciphername, dco_get_supported_ciphers()))
     {
-        msg(msglevel, "Note: --data-cipher-fallback with cipher '%s' "
+        msg(msglevel, "Note: --data-ciphers-fallback with cipher '%s' "
             "disables data channel offload.", o->ciphername);
         return false;
     }
@@ -487,7 +489,6 @@ dco_p2p_add_new_peer(struct context *c)
     }
 
     c->c2.tls_multi->dco_peer_id = multi->peer_id;
-    c->c2.link_socket->dco_installed = true;
 
     return 0;
 }
@@ -514,7 +515,7 @@ dco_multi_get_localaddr(struct multi_context *m, struct multi_instance *mi,
 #if ENABLE_IP_PKTINFO
     struct context *c = &mi->context;
 
-    if (!(c->options.sockflags & SF_USE_IP_PKTINFO))
+    if (!proto_is_udp(c->c2.link_socket->info.proto) || !(c->options.sockflags & SF_USE_IP_PKTINFO))
     {
         return false;
     }
@@ -606,17 +607,6 @@ dco_multi_add_new_peer(struct multi_context *m, struct multi_instance *mi)
     }
 
     c->c2.tls_multi->dco_peer_id = peer_id;
-
-    if (c->mode == CM_CHILD_TCP)
-    {
-        multi_tcp_dereference_instance(m->mtcp, mi);
-        if (close(sd))
-        {
-            msg(D_DCO|M_ERRNO, "error closing TCP socket after DCO handover");
-        }
-        c->c2.link_socket->dco_installed = true;
-        c->c2.link_socket->sd = SOCKET_UNDEFINED;
-    }
 
     return 0;
 }

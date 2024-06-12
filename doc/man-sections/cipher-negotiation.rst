@@ -8,7 +8,7 @@ different backwards compatibility mechanism with older server and clients.
 OpenVPN 2.5 and later behaviour
 --------------------------------
 When both client and server are at least running OpenVPN 2.5, that the order of
-the ciphers of the server's ``--data-ciphers`` is used to pick the the data cipher.
+the ciphers of the server's ``--data-ciphers`` is used to pick the data cipher.
 That means that the first cipher in that list that is also in the client's
 ``--data-ciphers`` list is chosen. If no common cipher is found the client is rejected
 with a AUTH_FAILED message (as seen in client log):
@@ -42,8 +42,9 @@ options to avoid this behaviour.
 OpenVPN 3 clients
 -----------------
 Clients based on the OpenVPN 3.x library (https://github.com/openvpn/openvpn3/)
-do not have a configurable ``--ncp-ciphers`` or ``--data-ciphers`` option. Instead
-these clients will announce support for all their supported AEAD ciphers
+do not have a configurable ``--ncp-ciphers`` or ``--data-ciphers`` option. Newer
+versions by default disable legacy AES-CBC, BF-CBC, and DES-CBC ciphers.
+These clients will always announce support for all their supported AEAD ciphers
 (`AES-256-GCM`, `AES-128-GCM` and in newer versions also `Chacha20-Poly1305`).
 
 To support OpenVPN 3.x based clients at least one of these ciphers needs to be

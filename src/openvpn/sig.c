@@ -5,7 +5,7 @@
  *             packet encryption, packet authentication, and
  *             packet compression.
  *
- *  Copyright (C) 2002-2023 OpenVPN Inc <sales@openvpn.net>
+ *  Copyright (C) 2002-2024 OpenVPN Inc <sales@openvpn.net>
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License version 2
@@ -23,8 +23,6 @@
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
-#elif defined(_MSC_VER)
-#include "config-msvc.h"
 #endif
 
 #include "syshead.h"
@@ -300,18 +298,23 @@ restore_signal_state(void)
  * Triggered by SIGUSR2 or F2 on Windows.
  */
 void
-print_status(const struct context *c, struct status_output *so)
+print_status(struct context *c, struct status_output *so)
 {
     struct gc_arena gc = gc_new();
 
     status_reset(so);
 
+    if (dco_enabled(&c->options))
+    {
+        dco_get_peer_stats(c);
+    }
+
     status_printf(so, "OpenVPN STATISTICS");
     status_printf(so, "Updated,%s", time_string(0, 0, false, &gc));
     status_printf(so, "TUN/TAP read bytes," counter_format, c->c2.tun_read_bytes);
     status_printf(so, "TUN/TAP write bytes," counter_format, c->c2.tun_write_bytes);
-    status_printf(so, "TCP/UDP read bytes," counter_format, c->c2.link_read_bytes);
-    status_printf(so, "TCP/UDP write bytes," counter_format, c->c2.link_write_bytes);
+    status_printf(so, "TCP/UDP read bytes," counter_format, c->c2.link_read_bytes + c->c2.dco_read_bytes);
+    status_printf(so, "TCP/UDP write bytes," counter_format, c->c2.link_write_bytes + c->c2.dco_write_bytes);
     status_printf(so, "Auth read bytes," counter_format, c->c2.link_read_bytes_auth);
 #ifdef USE_COMP
     if (c->c2.comp_context)
@@ -341,21 +344,6 @@ print_status(const struct context *c, struct status_output *so)
     gc_free(&gc);
 }
 
-
-/* Small helper function to determine if we should send the exit notification
- * via control channel */
-static inline bool
-cc_exit_notify_enabled(struct context *c)
-{
-    /* Check if we have TLS active at all */
-    if (!c->c2.tls_multi)
-    {
-        return false;
-    }
-
-    const struct key_state *ks = get_primary_key(c->c2.tls_multi);
-    return (ks->crypto_options.flags & CO_USE_CC_EXIT_NOTIFY);
-}
 
 /*
  * Handle the triggering and time-wait of explicit
@@ -417,7 +405,7 @@ remap_signal(struct context *c)
 }
 
 static void
-process_sigusr2(const struct context *c)
+process_sigusr2(struct context *c)
 {
     struct status_output *so = status_open(NULL, 0, M_INFO, NULL, 0);
     print_status(c, so);

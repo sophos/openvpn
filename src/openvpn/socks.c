@@ -5,7 +5,7 @@
  *             packet encryption, packet authentication, and
  *             packet compression.
  *
- *  Copyright (C) 2002-2023 OpenVPN Inc <sales@openvpn.net>
+ *  Copyright (C) 2002-2024 OpenVPN Inc <sales@openvpn.net>
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License version 2
@@ -31,8 +31,6 @@
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
-#elif defined(_MSC_VER)
-#include "config-msvc.h"
 #endif
 
 #include "syshead.h"
@@ -357,9 +355,14 @@ recv_socks_reply(socket_descriptor_t sd,
         size = recv(sd, &c, 1, MSG_NOSIGNAL);
 
         /* error? */
-        if (size != 1)
+        if (size < 0)
         {
             msg(D_LINK_ERRORS | M_ERRNO, "recv_socks_reply: TCP port read failed on recv()");
+            return false;
+        }
+        else if (size == 0)
+        {
+            msg(D_LINK_ERRORS, "ERROR: recv_socks_reply: empty response from socks server");
             return false;
         }
 

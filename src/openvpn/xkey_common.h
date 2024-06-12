@@ -5,7 +5,7 @@
  *             packet encryption, packet authentication, and
  *             packet compression.
  *
- *  Copyright (C) 2021-2023 Selva Nair <selva.nair@gmail.com>
+ *  Copyright (C) 2021-2024 Selva Nair <selva.nair@gmail.com>
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by the
@@ -33,6 +33,7 @@
 #define HAVE_XKEY_PROVIDER 1
 #include <openssl/provider.h>
 #include <openssl/core_dispatch.h>
+#include <openssl/ecdsa.h>
 
 /**
  * Initialization function for OpenVPN external key provider for OpenSSL
@@ -170,6 +171,20 @@ xkey_max_saltlen(int modBits, int hLen)
 
     return emLen - hLen - 2;
 }
+
+/**
+ * @brief Convert raw ECDSA signature to DER encoded
+ * This function converts ECDSA signature provided as a buffer
+ * containing r|s to DER encoded ASN.1 expected by OpenSSL
+ * @param buf       signature containing r|s.
+ * @param len       size of signature in bytes
+ * @param capacity  max space in the buffer buf in bytes
+ * @returns the size of the converted signature or <= 0 on error.
+ * On success, buf is overwritten by its DER encoding
+ */
+int
+ecdsa_bin2der(unsigned char *buf, int len, size_t capacity);
+
 #endif /* HAVE_XKEY_PROVIDER */
 
 #endif /* ENABLE_CRYPTO_OPENSSL */

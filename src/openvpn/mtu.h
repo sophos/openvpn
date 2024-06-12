@@ -5,7 +5,7 @@
  *             packet encryption, packet authentication, and
  *             packet compression.
  *
- *  Copyright (C) 2002-2023 OpenVPN Inc <sales@openvpn.net>
+ *  Copyright (C) 2002-2024 OpenVPN Inc <sales@openvpn.net>
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License version 2
@@ -217,10 +217,10 @@ frame_calculate_payload_size(const struct frame *frame,
  * *  [IP][UDP][OPENVPN PROTOCOL HEADER][ **PAYLOAD incl compression header** ]
  */
 size_t
-frame_calculate_payload_overhead(const struct frame *frame,
+frame_calculate_payload_overhead(size_t extra_tun,
                                  const struct options *options,
-                                 const struct key_type *kt,
-                                 bool extra_tun);
+                                 const struct key_type *kt);
+
 
 /**
  * Calculates the size of the OpenVPN protocol header. This includes
@@ -265,8 +265,7 @@ calc_packet_id_size_dc(const struct options *options,
  * allocate a buffer for socket or tun layer
  */
 void alloc_buf_sock_tun(struct buffer *buf,
-                        const struct frame *frame,
-                        const bool tuntap_buffer);
+                        const struct frame *frame);
 
 /*
  * EXTENDED_SOCKET_ERROR_CAPABILITY functions -- print extra error info

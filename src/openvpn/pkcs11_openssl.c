@@ -5,7 +5,7 @@
  *             packet encryption, packet authentication, and
  *             packet compression.
  *
- *  Copyright (C) 2002-2023 OpenVPN Inc <sales@openvpn.net>
+ *  Copyright (C) 2002-2024 OpenVPN Inc <sales@openvpn.net>
  *  Copyright (C) 2010-2021 Fox Crypto B.V. <openvpn@foxcrypto.com>
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -28,8 +28,6 @@
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
-#elif defined(_MSC_VER)
-#include "config-msvc.h"
 #endif
 
 #include "syshead.h"
@@ -165,9 +163,11 @@ xkey_pkcs11h_sign(void *handle, unsigned char *sig,
 {
     pkcs11h_certificate_t cert = handle;
     CK_MECHANISM mech = {CKM_RSA_PKCS, NULL, 0}; /* default value */
+    CK_RSA_PKCS_PSS_PARAMS pss_params = {0};
 
     unsigned char buf[EVP_MAX_MD_SIZE];
     size_t buflen;
+    size_t siglen_max = *siglen;
 
     unsigned char enc[EVP_MAX_MD_SIZE + 32]; /* 32 bytes enough for DigestInfo header */
     size_t enc_len = sizeof(enc);
@@ -202,7 +202,6 @@ xkey_pkcs11h_sign(void *handle, unsigned char *sig,
         }
         else if (!strcmp(sigalg.padmode, "pss"))
         {
-            CK_RSA_PKCS_PSS_PARAMS pss_params = {0};
             mech.mechanism = CKM_RSA_PKCS_PSS;
 
             if (!set_pss_params(&pss_params, sigalg, cert))
@@ -234,8 +233,26 @@ xkey_pkcs11h_sign(void *handle, unsigned char *sig,
         ASSERT(0);  /* coding error -- we couldnt have created any such key */
     }
 
-    return CKR_OK == pkcs11h_certificate_signAny_ex(cert, &mech,
-                                                    tbs, tbslen, sig, siglen);
+    if (CKR_OK != pkcs11h_certificate_signAny_ex(cert, &mech,
+                                                 tbs, tbslen, sig, siglen))
+    {
+        return 0;
+    }
+    if (strcmp(sigalg.keytype, "EC"))
+    {
+        return 1;
+    }
+
+    /* For EC keys, pkcs11 returns signature as r|s: convert to der encoded */
+    int derlen = ecdsa_bin2der(sig, (int) *siglen, siglen_max);
+
+    if (derlen <= 0)
+    {
+        return 0;
+    }
+    *siglen = derlen;
+
+    return 1;
 }
 
 /* wrapper for handle free */
@@ -285,7 +302,8 @@ xkey_load_from_pkcs11h(pkcs11h_certificate_t certificate,
 
     if (!SSL_CTX_use_cert_and_key(ctx->ctx, x509, pkey, NULL, 0))
     {
-        msg(M_WARN, "PKCS#11: Failed to set cert and private key for OpenSSL");
+        crypto_print_openssl_errors(M_WARN);
+        msg(M_FATAL, "PKCS#11: Failed to set cert and private key for OpenSSL");
         goto cleanup;
     }
     ret = 1;
@@ -314,8 +332,7 @@ pkcs11_init_tls_session(pkcs11h_certificate_t certificate,
 
 #ifdef HAVE_XKEY_PROVIDER
     return (xkey_load_from_pkcs11h(certificate, ssl_ctx) == 0); /* inverts the return value */
-#endif
-
+#else
     int ret = 1;
 
     X509 *x509 = NULL;
@@ -353,7 +370,8 @@ pkcs11_init_tls_session(pkcs11h_certificate_t certificate,
 
     if (!SSL_CTX_use_certificate(ssl_ctx->ctx, x509))
     {
-        msg(M_WARN, "PKCS#11: Cannot set certificate for openssl");
+        crypto_print_openssl_errors(M_WARN);
+        msg(M_FATAL, "PKCS#11: Cannot set certificate for openssl");
         goto cleanup;
     }
     ret = 0;
@@ -385,6 +403,7 @@ cleanup:
         openssl_session = NULL;
     }
     return ret;
+#endif /* ifdef HAVE_XKEY_PROVIDER */
 }
 
 char *
